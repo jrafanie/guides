@@ -27,7 +27,7 @@ running an OIDC server and Apache on a local development setup.
    ```sh
    podman run --rm -it --name httpd \
      -p 80:80 \
-     -v $(pwd)/oidc-httpd-configs:/etc/httpd/conf.d \
+     -v $(pwd)/external_auth/oidc-httpd-configs:/etc/httpd/conf.d \
      -e HTTPD_AUTH_OIDC_CLIENT_ID=manageiq-oidc-client \
      -e HTTPD_AUTH_OIDC_CLIENT_SECRET=3167ae6f-762d-49cd-b246-ef8856315957 \
      -e HTTPD_AUTH_HOST=127.0.0.1.nip.io \
