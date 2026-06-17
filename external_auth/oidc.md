@@ -53,6 +53,7 @@ running an OIDC server and Apache on a local development setup.
       | Provider Type         | `Enable OpenID-Connect` |
       | Get User Groups from External Authentication (httpd) | checked |
 
+   3. Save the changes
    4. Logout
    5. Click `Log In to Corporate System`
 
