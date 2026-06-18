@@ -3,9 +3,11 @@
 This document describes the steps needed to enable External Authentication (httpd),
 running an OIDC server and Apache on a local development setup.
 
-1. Ensure you have the [guides](https://github.com/ManageIQ/guides) repo cloned locally, then `cd guides/external_auth`
+1. Ensure you have the [guides](https://github.com/ManageIQ/guides) repo cloned locally
 
-2. Launch KeyCloak
+2. `cd guides/external_auth`
+
+3. Launch KeyCloak
 
    ```sh
       podman run --rm -it --name keycloak \
@@ -22,7 +24,7 @@ running an OIDC server and Apache on a local development setup.
 
    When it completes startup, go to `https://127.0.0.1.nip.io:8443` and login with `admin` / `smartvm` to verify it's working. You should see a realm for `ManageIQ`.
 
-3. Launch the httpd container
+4. Launch the httpd container
 
    ```sh
    podman run --rm -it --name httpd \
@@ -37,7 +39,7 @@ running an OIDC server and Apache on a local development setup.
    ```
    Note: 192.168.65.2 / 192.168.127.254 is a hardcoded proxy for host.docker.internal / host.containers.internal on podman
 
-4. Launch ManageIQ
+5. Launch ManageIQ
 
    Run your Rails server as you normally would for development, however, instead of accessing via the browser at `https://localhost:3000`, use `http://127.0.0.1.nip.io:8080` (notice `http` as opposed to `https` and port `8080`).
 
