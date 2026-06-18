@@ -8,16 +8,16 @@ running an OIDC server and Apache on a local development setup.
 2. Launch KeyCloak
 
    ```sh
-   podman run --rm -it --name keycloak \
-     -p 8443:8443 \
-     -v $(pwd)/certs:/etc/x509/https \
-     -v $(pwd)/realms:/tmp/realms \
-     -e JAVA_OPTS="-Dkeycloak.profile.feature.scripts=enabled -Dkeycloak.profile.feature.upload_scripts=enabled" \
-     -e KEYCLOAK_IMPORT=/tmp/realms/ManageIQ-realm.json \
-     -e KEYCLOAK_USER=admin \
-     -e KEYCLOAK_PASSWORD=smartvm \
-     -e DB_VENDOR=h2 \
-     quay.io/keycloak/keycloak:12.0.4
+      podman run --rm -it --name keycloak \
+         -p 8443:8443 \
+         -v $(pwd)/certs:/opt/keycloak/conf/certs \
+         -v $(pwd)/realms:/opt/keycloak/data/import \
+         -e KC_BOOTSTRAP_ADMIN_USERNAME=admin \
+         -e KC_BOOTSTRAP_ADMIN_PASSWORD=smartvm \
+         -e KC_HTTPS_CERTIFICATE_FILE=/opt/keycloak/conf/certs/tls.crt \
+         -e KC_HTTPS_CERTIFICATE_KEY_FILE=/opt/keycloak/conf/certs/tls.key \
+         quay.io/keycloak/keycloak:26.6.3 \
+         start-dev --import-realm
    ```
 
    When it completes startup, go to `https://127.0.0.1.nip.io:8443` and login with `admin` / `smartvm` to verify it's working. You should see a realm for `ManageIQ`.
@@ -65,16 +65,13 @@ running an OIDC server and Apache on a local development setup.
 If you've made changes in KeyCloak that you'd like to save, leave KeyCloak running and in another terminal run:
 
 ```sh
-podman exec -it keycloak /opt/jboss/keycloak/bin/standalone.sh \
-  -Djboss.socket.binding.port-offset=100 \
-  -Dkeycloak.migration.action=export \
-  -Dkeycloak.migration.provider=singleFile \
-  -Dkeycloak.migration.realmName=ManageIQ \
-  -Dkeycloak.migration.usersExportStrategy=REALM_FILE \
-  -Dkeycloak.migration.file=/tmp/realms/ManageIQ-realm.json
+podman exec -it keycloak /opt/keycloak/bin/kc.sh export \
+  --file /opt/keycloak/data/import/ManageIQ-realm.json \
+  --realm ManageIQ \
+  --users realm_file
 ```
 
-When it completes, `Ctrl-C` to end the process and the `realms/ManageIQ-realm.json` file will be updated.
+When it completes, `realms/ManageIQ-realm.json` will be updated on the host.
 
 ### Recreating KeyCloak setup from scratch
 
@@ -94,14 +91,16 @@ When it completes, `Ctrl-C` to end the process and the `realms/ManageIQ-realm.js
 3. Launch KeyCloak
 
    ```sh
-   podman run --rm --name keycloak \
-     -p 8443:8443 \
-     -v $(pwd)/certs:/etc/x509/https \
-     -v $(pwd)/realms:/tmp/realms \
-     -e KEYCLOAK_USER=admin \
-     -e KEYCLOAK_PASSWORD=smartvm \
-     -e DB_VENDOR=h2 \
-     quay.io/keycloak/keycloak:12.0.4
+   podman run --rm -it --name keycloak \
+      -p 8443:8443 \
+      -v $(pwd)/certs:/opt/keycloak/conf/certs \
+      -v $(pwd)/realms:/opt/keycloak/data/import \
+      -e KC_BOOTSTRAP_ADMIN_USERNAME=admin \
+      -e KC_BOOTSTRAP_ADMIN_PASSWORD=smartvm \
+      -e KC_HTTPS_CERTIFICATE_FILE=/opt/keycloak/conf/certs/tls.crt \
+      -e KC_HTTPS_CERTIFICATE_KEY_FILE=/opt/keycloak/conf/certs/tls.key \
+      quay.io/keycloak/keycloak:26.6.3 \
+      start-dev
    ```
 
 4. Go to `https://127.0.0.1.nip.io:8443` and login with `admin` / `smartvm`
@@ -118,10 +117,9 @@ When it completes, `Ctrl-C` to end the process and the `realms/ManageIQ-realm.js
 
    | | |
    |-|-|
-   | Client ID       | `manageiq-oidc-client` |
-   | Client Protocol | `openid-connect` |
+   | Client ID | `manageiq-oidc-client` |
 
-   Once created, go to the credentials tab and copy down the generated `Secret` value.
+   Once created, copy down the generated client secret.
 
 7. Configure the OIDC Client
 
@@ -129,12 +127,15 @@ When it completes, `Ctrl-C` to end the process and the `realms/ManageIQ-realm.js
 
       | | |
       |-|-|
-      | Access Type              | `confidential` |
-      | Service Accounts Enabled | `ON` |
-      | Authorization Enabled    | `ON` |
-      | Valid Redirect URIs      | `http://127.0.0.1.nip.io:8080/*` |
+      | Client authentication | `ON` |
+      | Authorization         | `ON` |
+      | Valid redirect URIs   | `http://127.0.0.1.nip.io:8080/*` |
 
-   2. Mappers -> Create
+      TODO: Confirm whether newer Keycloak also requires explicitly setting `Root URL`, `Home URL`, `Web origins`, or `Post logout redirect URIs` for this development flow.
+
+   2. Client scopes / protocol mappers
+
+      Create a mapper for groups so KeyCloak emits the `groups` claim used by the httpd config.
 
       | | |
       |-|-|
@@ -142,6 +143,18 @@ When it completes, `Ctrl-C` to end the process and the `realms/ManageIQ-realm.js
       | Mapper Type      | `Group Membership` |
       | Token Claim Name | `groups` |
       | Full group path  | `OFF` |
+
+      TODO: Confirm the exact KeyCloak 26 UI path/name for creating this mapper, since protocol mappers moved in newer releases.
+
+   3. Authorization
+
+      The committed realm export no longer uses the older JavaScript-based default policy. In newer KeyCloak releases, the default policy is represented as a role-based policy that grants access to authenticated users via the built-in `offline_access` role.
+
+      TODO: Document the exact KeyCloak 26 authorization UI steps needed to recreate the committed default policy:
+      - policy type `role`
+      - policy name `Default Policy`
+      - role `offline_access`
+      - behavior matching the committed `ManageIQ-realm.json`
 
 8. Create a group
 
@@ -153,7 +166,7 @@ When it completes, `Ctrl-C` to end the process and the `realms/ManageIQ-realm.js
 
    | | |
    |-|-|
-   | Name           | `user1` |
+   | Username       | `user1` |
    | Email          | `user1@manageiq.org` |
    | First Name     | `User` |
    | Last Name      | `One` |
@@ -171,22 +184,26 @@ When it completes, `Ctrl-C` to end the process and the `realms/ManageIQ-realm.js
 
     2. Groups
 
-       Put the user into a group by clicking the group, then clicking `Join`.
+       Put the user into the `EvmGroup-super_administrator` group.
 
 11. Verify the setup
 
-    Be sure you have your OIDC client secret from step 6. `${client_secret}` below is a reference to that value. The client secret value from the current ManageIQ Realm export is `3167ae6f-762d-49cd-b246-ef8856315957`.
+    1. Set the OIDC client secret:
 
-    1. Fetch the configuration
+    ```sh
+    client_secret="3167ae6f-762d-49cd-b246-ef8856315957"
+    ```
+
+    2. Fetch the configuration
 
        ```sh
-       curl -s -k https://127.0.0.1.nip.io:8443/auth/realms/ManageIQ/.well-known/openid-configuration | jq
+       curl -s -k https://127.0.0.1.nip.io:8443/realms/ManageIQ/.well-known/openid-configuration | jq
        ```
 
-    2. Get an access token
+    3. Get an access token
 
        ```sh
-       token=$(curl -s -k -X POST https://127.0.0.1.nip.io:8443/auth/realms/ManageIQ/protocol/openid-connect/token \
+       token=$(curl -s -k -X POST https://127.0.0.1.nip.io:8443/realms/ManageIQ/protocol/openid-connect/token \
          -H "Content-Type: application/x-www-form-urlencoded" \
          -u manageiq-oidc-client:${client_secret} \
          -d username=user1 \
@@ -194,13 +211,13 @@ When it completes, `Ctrl-C` to end the process and the `realms/ManageIQ-realm.js
          -d grant_type=password | jq -r ".access_token")
        ```
 
-    3. Introspect the access token
+    4. Introspect the access token
 
        ```sh
-       curl -s -k -X POST https://127.0.0.1.nip.io:8443/auth/realms/ManageIQ/protocol/openid-connect/token/introspect \
+       curl -s -k -X POST https://127.0.0.1.nip.io:8443/realms/ManageIQ/protocol/openid-connect/token/introspect \
          -H "Content-Type: application/x-www-form-urlencoded" \
          -u manageiq-oidc-client:${client_secret} \
          -d "token=${token}" | jq
        ```
 
-12. Export the realm file. If you plan to commit this, be sure to also update the client secret values in this documentation.
+12. Export the realm file. If you plan to commit this, also update the client secret values in this documentation.
